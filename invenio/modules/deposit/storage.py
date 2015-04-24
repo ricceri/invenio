@@ -97,23 +97,24 @@ class Storage(object):
         return str(uuid.uuid4()) + "-" + filename
 
     def save(self, incoming_file, filename, unique_name=True,
-             with_checksum=True):
+             with_checksum=True, chunksize=65536):
         """ Store the incoming file """
         if unique_name:
             filename = self.unique_filename(filename)
 
         fs_file = self.storage.open(filename, 'wb')
-
         checksum = None
-        f_bytes = incoming_file.read()
-        fs_file.write(f_bytes)
+        m = hashlib.md5()
 
-        if with_checksum:
-            m = hashlib.md5()
-            m.update(f_bytes)
-            checksum = m.hexdigest()
+        f_bytes = incoming_file.read(chunksize)
+        while f_bytes:
+            fs_file.write(f_bytes)
+            if with_checksum:
+                m.update(f_bytes)
+            f_bytes = incoming_file.read(chunksize)
 
         fs_file.close()
+        checksum = m.hexdigest()
 
         # Create complete file path and return it
         return (
@@ -212,10 +213,15 @@ class ChunkedDepositionStorage(DepositionStorage):
 
         for c in file_chunks:
             fs_c = self.storage.open(c, 'rb')
-            f_bytes = fs_c.read()
-            fs_file.write(f_bytes)
+
+            f_bytes = fs_c.read(65536)
+            while f_bytes:
+                fs_file.write(f_bytes)
+                m.update(f_bytes)
+                f_bytes = fs_c.read(65536)
+
             fs_c.close()
-            m.update(f_bytes)
+
             # Remove each chunk right after appending to main file, to
             # minimize storage usage.
             self.storage.remove(c)
